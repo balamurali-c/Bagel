@@ -17,11 +17,13 @@ ENV MAX_JOBS=4
 # Copy dependencies and install them
 COPY requirements.txt .
 RUN pip install --upgrade pip
+
 RUN pip install --no-cache-dir packaging setuptools wheel
-RUN pip install --no-cache-dir -r requirements.txt
 
 # The base image already ships with torch 2.5.0+cu122; we only need matching torchvision
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torchvision==0.20.1
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 RUN pip install gradio
 
