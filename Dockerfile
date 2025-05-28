@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y git && apt-get clean
 
 # Copy dependencies and install them
 COPY requirements.txt .
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
