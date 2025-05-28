@@ -37,8 +37,9 @@ jobs:
 
       - name: Build and push container image
         run: |
-          docker build -t ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:${{ github.sha }} .
-          docker push ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:${{ github.sha }}
+          docker build -t ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest .
+          docker tag ${{ vars.AZURE_APP_NAME }}:latest ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest
+          docker push ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest
 
       - name: Deploy to Azure Container App
         run: |
