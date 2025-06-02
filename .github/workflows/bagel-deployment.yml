@@ -1,8 +1,8 @@
 name: Trigger auto deployment for bagel-cpu
 
-# When this action will be executed
+# When will this action be executed
 on:
-  # Automatically trigger it when detected changes in repo
+  # Automatically trigger it when detected changes in the repo
   push:
     branches: 
       [ main ]
@@ -24,28 +24,71 @@ jobs:
       - name: Checkout to the branch
         uses: actions/checkout@v3
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Azure Login
         uses: azure/login@v1
         with:
-          client-id: ${{ secrets.BAGELCPU_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.BAGELCPU_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.BAGELCPU_AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
           
       - name: Login to ACR
         run: |
           echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ vars.ACR_NAME }}.azurecr.io -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin
 
+      - name: Check and Create ACR if it exists
+        run: |
+          if ! az acr show --name ${{ vars.ACR_NAME }} > /dev/null 2>&1; then
+            echo "Creating ACR: ${{ vars.ACR_NAME }}"
+            az acr create --name ${{ vars.ACR_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --sku Basic --location swedencentral
+          else
+            echo "ACR already exists: ${{ vars.ACR_NAME }}"
+          fi
+
+      - name: Enable Admin User in ACR
+        run: |
+          az acr update --name ${{ vars.ACR_NAME }} --admin-enabled true
+          
       - name: Build and push container image
         run: |
           docker build -t ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest .
           docker tag ${{ vars.AZURE_APP_NAME }}:latest ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest
           docker push ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest
 
-      - name: Deploy to Azure Container App
+      - name: Create or update Azure Container App Environment
         run: |
-          az containerapp update \
-            --name bagel-cpu \
+          # Check if the Azure Container App Environment exists
+          az containerapp env show --name ${{ vars.AZURE_ENVIRONMENT_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} || \
+          az containerapp env create --name ${{ vars.AZURE_ENVIRONMENT_NAME }} \
             --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-            --image ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:${{ github.sha }}
+            --location swedencentral
+
+      - name: Create or update Azure Container App 
+        run: |
+          # Create or update the Azure Container App
+          az containerapp show --name ${{ vars.AZURE_APP_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} || \
+          az containerapp create --name ${{ vars.AZURE_APP_NAME }} \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest \
+            --environment ${{ vars.AZURE_ENVIRONMENT_NAME }} \
+            --target-port 8000 \
+            --ingress 'external' \
+            --cpu 1 --memory 2.0Gi \
+            --min-replicas 0 --max-replicas 10 \
+            --registry-server ${{ vars.ACR_NAME }}.azurecr.io \
+            --revisions-mode 'single' \
+            --container-name ${{ vars.AZURE_APP_NAME }}
+
+      - name: Check provisioning state of Azure Container App
+        run: |
+          PROVISIONING_STATE=$(az containerapp show --name ${{ vars.AZURE_APP_NAME }} --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --query "properties.provisioningState" -o tsv)
+            echo "Provisioning state: $PROVISIONING_STATE"
+      
+      #- name: Deploy to Azure Container App
+      #  run: |
+      #    az containerapp update \
+      #      --name ${{ vars.AZURE_APP_NAME }} \
+      #      --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+      #      --image ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.AZURE_APP_NAME }}:latest
 
 
